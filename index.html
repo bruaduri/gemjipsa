@@ -108,8 +108,9 @@
           </svg>
           <span id="headerDateText" class="font-medium"></span>
         </button>
-        <button id="statusToggleBtn" type="button" class="px-2 py-1 rounded-md bg-[#171a20] border border-[#2a303b] text-[#d9e0ea] hover:bg-[#1e222a]">
-          <span id="headerBadge">미확인 11</span>
+        <button id="statusToggleBtn" type="button" class="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-[#171a20] border border-[#2a303b] text-[#d9e0ea] hover:bg-[#1e222a]">
+          <span id="headerStatusDot" class="w-1.5 h-1.5 rounded-full bg-[#5ce1a8]"></span>
+          <span id="headerBadge">정상</span>
         </button>
       </div>
     </header>
@@ -220,7 +221,10 @@
             <h2 class="text-[14.5px] font-bold text-white">취미</h2>
             <span id="hobbyCount" class="text-[12px] c-sub"></span>
           </div>
-          <button id="goHobbyBtn" type="button" class="text-[12px] c-sub hover:text-white">작품 전체 보기 ›</button>
+          <div class="flex items-center gap-3 text-[12px]">
+            <button id="homeHobbyAllAckBtn" type="button" class="c-accent font-medium hover:underline">모두 확인</button>
+            <button id="goHobbyBtn" type="button" class="c-sub hover:text-white">작품 전체 보기 ›</button>
+          </div>
         </div>
         <div id="homeHobbySchedule" class="c-card c-div c-bar" style="--sec-c:#fbbf24"></div>
       </section>
@@ -375,6 +379,7 @@
         ackedAi: {},
         ackedHobby: {},
         lastSyncAt: '',
+        mailLastRun: SEED.mailLastRun || '',
         mailItems: SEED.mailItems,
         aiTip: SEED.aiTip,
         aiNews: SEED.aiNews,
@@ -644,11 +649,22 @@
         const mailUn = state.mailItems.filter((m) => m.unread);
         const aiUn = state.aiNews.filter((n) => n.unread);
         const hbUn = state.hobbies.filter((h) => h.unread);
-        const total = mailUn.length + aiUn.length + hbUn.length;
         document.getElementById('headerDateText').textContent = KST_TODAY.label;
-        document.getElementById('headerBadge').textContent = total > 0 ? `미확인 ${total}` : '모두 확인';
+        const lastRunStr = state.mailLastRun || '';
+        let runOk = true;
+        if (lastRunStr && /^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}/.test(lastRunStr)) {
+          const [dPart, tPart] = lastRunStr.split(/\s+/);
+          const [ry, rm, rd] = dPart.split('-').map(Number);
+          const [rh, rmin] = tPart.split(':').map(Number);
+          const runMs = Date.UTC(ry, rm - 1, rd, rh - 9, rmin);
+          const ageHours = (Date.now() - runMs) / 3600000;
+          runOk = ageHours <= 20;
+        }
+        const dotEl = document.getElementById('headerStatusDot');
+        if (dotEl) dotEl.className = runOk ? 'w-1.5 h-1.5 rounded-full bg-[#5ce1a8]' : 'w-1.5 h-1.5 rounded-full bg-[#fbbf24]';
+        document.getElementById('headerBadge').textContent = runOk ? '정상' : '예약 확인';
         document.getElementById('statusMetaText').textContent =
-          `메일 ${state.mailItems.length} · AI 소식 ${state.aiNews.length} · 취미 ${state.hobbies.length} · 기기 ${state.devices.length} · 구매함 ${state.purchaseItems.length}`;
+          `마지막 예약 실행: ${lastRunStr || '기록 없음'} · 메일 ${state.mailItems.length} · AI ${state.aiNews.length} · 취미 ${state.hobbies.length} · 기기 ${state.devices.length}`;
 
         // 1. Always-open AI Briefing
         const sched = getHobbySchedule();
@@ -727,6 +743,7 @@
 
         // 4. Hobby Schedule on Home
         document.getElementById('hobbyCount').textContent = hbUn.length ? `새 소식 ${hbUn.length}` : '완료';
+        document.getElementById('homeHobbyAllAckBtn').classList.toggle('hidden', hbUn.length === 0);
         document.getElementById('homeHobbySchedule').innerHTML = renderScheduleHtml(sched, 'hhd');
       }
 
@@ -988,7 +1005,9 @@
       });
 
       // Hobby controls
-      document.getElementById('hobbyAllAckBtn').addEventListener('click', () => { state.hobbies.forEach((h) => { h.unread = false; state.ackedHobby[h.id + ':' + h.date] = true; }); saveState(); renderAll(); showToast('취미 소식을 모두 확인했어요.'); });
+      const ackAllHobby = () => { state.hobbies.forEach((h) => { h.unread = false; state.ackedHobby[h.id + ':' + h.date] = true; }); saveState(); renderAll(); showToast('취미 소식을 모두 확인했어요.'); };
+      document.getElementById('hobbyAllAckBtn').addEventListener('click', ackAllHobby);
+      document.getElementById('homeHobbyAllAckBtn').addEventListener('click', ackAllHobby);
       document.getElementById('hobbyFilterBar').addEventListener('click', (e) => {
         const b = e.target.closest('button[data-hf]');
         if (b) { state.hobbyFilter = b.dataset.hf; renderHobbyTab(); }
@@ -1104,6 +1123,7 @@
             if (Array.isArray(remote.devices) && remote.devices.length) state.devices = remote.devices;
             if (Array.isArray(remote.purchaseItems) && remote.purchaseItems.length) state.purchaseItems = remote.purchaseItems;
             if (remote.aiTip) state.aiTip = remote.aiTip;
+            if (remote.mailLastRun) state.mailLastRun = remote.mailLastRun;
 
             const now = new Date();
             const kst = new Date(now.getTime() + (now.getTimezoneOffset() + 540) * 60000);
